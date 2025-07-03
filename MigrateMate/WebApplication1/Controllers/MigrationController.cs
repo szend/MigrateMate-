@@ -16,7 +16,7 @@ namespace MigrateApi.Controllers
         {
             DbManager dbManager = new DbManager(request);
 
-            dbManager.MigrateData();
+           await dbManager.MigrateData();
 
             return new JsonResult("", new JsonSerializerOptions() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         }

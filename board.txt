@@ -1,0 +1,31 @@
+board:
+20x20 printed field type
+other field change: square, fill into a part of the board and replace it with new type
+
+animals: small colored dice with number
+
+
+resources changes: other shaped token with /,*,%,+,- and a number
+blocks:
+block number or name for cards to identify
+every maybe x number of field is a block, next to each block there is a place for, holed rectangle with unique color to separate the blocks, can separate 4,6,8,10 field
+
+water dice: 1-6
+food dice: 0-36
+temperature slider: 5 block 5 marker for every climatic zone
+
+plants: put plants marker anywhere in the block, only one per plant type per block, no limit but cant make food higher if max
+
+place type:
+type of places in the big game board, default is printed, can be replaced each part with a square
+water: it has 6 water and 4food
+field: if you put more field on each other you get a hill and -10 temperature for each field, 4food default, the water is depend on a dice next to every block of the board (2x2 field = block), if it became 6 then place a water to the field
+ice(maybe not in the base game, dont calculate with this): if the temperature is lower then 0 put an ice in the top, ice always on the top, then water, the field, 2 default food, water and ice makes the hill looking higher but do not change the temperature, water depend on the block no matter if there is water in the bottom
+
+environment changes:
+water: 1-6 change the water value of a block
+hill: put or remove a field to change the height 
+temperature: dice -10->+40, change the value
+disaster: something kills every % of animal in a field or field group
++-resources: put a x-/ token into a field or fields, this makes the food bigger or smaller
+wind/earthquake: force animals to move from field(s) to other field

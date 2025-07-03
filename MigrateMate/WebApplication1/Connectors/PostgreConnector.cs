@@ -3,6 +3,7 @@ using System;
 using System.Security.Cryptography.Xml;
 using MigrateApi.Models;
 using Npgsql;
+using System.Threading.Tasks;
 
 namespace MigrateApi.Connectors
 {
@@ -15,79 +16,40 @@ namespace MigrateApi.Connectors
             ConnectionString = connectionString;
         }
 
-        public List<string> GetAllTableName()
+        public async Task<List<string>> GetAllTableNameAsync()
         {
             List<string> tables = new List<string>();
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
+            await using var myConnection = new NpgsqlConnection(ConnectionString);
+            string oString = "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public';";
+
+            await myConnection.OpenAsync();
+            await using var oCmd = new NpgsqlCommand(oString, myConnection);
+            await using var oReader = await oCmd.ExecuteReaderAsync();
+
+            while (await oReader.ReadAsync())
             {
-                string dbname = ConnectionString.Split(';').FirstOrDefault(x => x.Contains("Initial Catalog") || x.Contains("Database")).Split('=')[1];
-                string oString = "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public';";
-
-                NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                myConnection.Open();
-                using (NpgsqlDataReader oReader = oCmd.ExecuteReader())
+                string classname = oReader[0]?.ToString();
+                if (!string.IsNullOrEmpty(classname))
                 {
-                    int idx = 0;
-
-                    while (oReader.Read())
-                    {
-                        string classname = oReader[0].ToString();
-
-                        if (classname != null)
-                        {
-                            tables.Add(classname);
-                        }
-                        idx++;
-                    }
-
-                    myConnection.Close();
+                    tables.Add(classname);
                 }
             }
+
             return tables;
         }
 
-        public List<Table> GetAllTable(List<string> tablenames)
+        public async Task<List<Table>> GetAllTableAsync(List<string> tablenames)
         {
-            List<Table> types = new List<Table>();
-            int idx = 0;
-            foreach (var item in tablenames)
+            var tasks = tablenames.Select(async name =>
             {
-                string resultClassString = GetTableInfo(item);
-                types.Add(ConvertToTableDef(resultClassString));
-                idx++;
-            }
+                string def = await GetTableInfoAsync(name);
+                return ConvertToTableDef(def);
+            });
 
-            return types;
+            return (await Task.WhenAll(tasks)).ToList();
         }
 
-        public Table ConvertToTableDef(string deffinition)
-        {
-            var nameValuePair = deffinition.Split(':');
-            var columnsString = nameValuePair[1].Split(";");
-
-            Table table = new Table();
-            table.Name = nameValuePair[0];
-
-            foreach (var columnStr in columnsString)
-            {
-                if(columnStr.Trim() != string.Empty)
-                {
-                    var coldata = columnStr.Split(',');
-                    Column column = new Column();
-                    column.IsPrimaryKey = bool.Parse(coldata[0]);
-                    column.Name = coldata[1];
-                    column.Type = Enum.Parse<ColumnType>(coldata[2]);
-                    column.IsArray = bool.Parse(coldata[3]);
-                    column.MaxLenght = int.Parse(coldata[4]);
-                    column.Nullabel = bool.Parse(coldata[5]);
-                    table.Columns.Add(column);
-                }
-            }
-
-            return table;
-        }
-
-        public string GetTableInfo(string name)
+        public async Task<string> GetTableInfoAsync(string name)
         {
             string? oString = @"
                     SELECT 
@@ -101,7 +63,7 @@ namespace MigrateApi.Connectors
                         else 'false,'
  end 
  ||
-'"  + "' || column_name || " + " '" + @",'
+'" + "' || column_name || " + " '" + @",'
 ||
                       case
                         when data_type = 'uuid' THEN 'Guid,false,'
@@ -138,48 +100,67 @@ namespace MigrateApi.Connectors
                       AND table_name   = '" + name + @"';
                                     ";
             string result = "";
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
-            {
-                NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                myConnection.Open();
-                using (NpgsqlDataReader oReader = oCmd.ExecuteReader())
-                {
-                    while (oReader.Read())
-                    {
-                        for (int i = 0; i < oReader.FieldCount; i++)
-                        {
-                            result = result + " " + oReader[i].ToString() + " ";
-                        }
-                    }
+            await using var myConnection = new NpgsqlConnection(ConnectionString);
+            await myConnection.OpenAsync();
+            await using var oCmd = new NpgsqlCommand(oString, myConnection);
+            await using var oReader = await oCmd.ExecuteReaderAsync();
 
-                    myConnection.Close();
+            while (await oReader.ReadAsync())
+            {
+                for (int i = 0; i < oReader.FieldCount; i++)
+                {
+                    result += " " + oReader[i]?.ToString() + " ";
                 }
             }
+
             result = name + ":" + result;
             return result;
         }
+        private Table ConvertToTableDef(string deffinition)
+        {
+            var nameValuePair = deffinition.Split(':');
+            var columnsString = nameValuePair[1].Split(";");
 
-        public bool CreateTable(Table table)
+            Table table = new Table();
+            table.Name = nameValuePair[0];
+
+            foreach (var columnStr in columnsString)
+            {
+                if(columnStr.Trim() != string.Empty)
+                {
+                    var coldata = columnStr.Split(',');
+                    Column column = new Column();
+                    column.IsPrimaryKey = bool.Parse(coldata[0]);
+                    column.Name = coldata[1];
+                    column.Type = Enum.Parse<ColumnType>(coldata[2]);
+                    column.IsArray = bool.Parse(coldata[3]);
+                    column.MaxLenght = int.Parse(coldata[4]);
+                    column.Nullabel = bool.Parse(coldata[5]);
+                    table.Columns.Add(column);
+                }
+            }
+
+            return table;
+        }
+
+        public async Task<bool> CreateTableAsync(Table table)
         {
             try
             {
-                using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
-                {
-                    var pkey = table.Columns.Where(x => x.IsPrimaryKey == true);
+                await using var myConnection = new NpgsqlConnection(ConnectionString);
+                var pkey = table.Columns.Where(x => x.IsPrimaryKey).ToList();
 
-                    string columnsSql = string.Join(",", table.Columns.Select(x =>
-                        "\"" + x.Name + "\" " + TypeMapping(x) + (x.Nullabel ? " " : " NOT NULL")));
+                string columnsSql = string.Join(",", table.Columns.Select(x =>
+                    "\"" + x.Name + "\" " + TypeMapping(x) + (x.Nullabel ? "" : " NOT NULL")));
 
-                    string oString = "CREATE TABLE \"" + table.Name + "\" (" +
-                                     columnsSql +
-                                     (pkey.Any() ? ", PRIMARY KEY (" + string.Join(",", pkey.Select(x => "\"" + x.Name + "\"")) + ")" : "") +
-                                     ")";
+                string oString = "CREATE TABLE \"" + table.Name + "\" (" +
+                                 columnsSql +
+                                 (pkey.Any() ? ", PRIMARY KEY (" + string.Join(",", pkey.Select(x => "\"" + x.Name + "\"")) + ")" : "") +
+                                 ")";
 
-                    NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                    myConnection.Open();
-                    oCmd.ExecuteNonQuery();
-                    myConnection.Close();
-                }
+                await myConnection.OpenAsync();
+                await using var oCmd = new NpgsqlCommand(oString, myConnection);
+                await oCmd.ExecuteNonQueryAsync();
             }
             catch (Exception)
             {
@@ -232,96 +213,73 @@ namespace MigrateApi.Connectors
             }
         }
 
-        public int GetCount(Table table)
+        public async Task<long> GetCountAsync(Table table)
         {
+            await using var myConnection = new NpgsqlConnection(ConnectionString);
+            string oString = $"SELECT COUNT(*) FROM \"{table.Name}\"";
 
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
-            {
-                string oString = "SELECT COUNT(*) FROM \"" + table.Name + "\"";
+            await myConnection.OpenAsync();
+            await using var oCmd = new NpgsqlCommand(oString, myConnection);
+            object result = await oCmd.ExecuteScalarAsync();
 
-                NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                myConnection.Open();
-                using (NpgsqlDataReader oReader = oCmd.ExecuteReader())
-                {
-                    while (oReader.Read())
-                    {
-                        return oReader.GetInt32(0);
-                    }
-
-                    myConnection.Close();
-                }
-            }
-            return 0;
+            return Convert.ToInt64(result);
         }
 
-        public void GetDataFromTable(Table table, int offset, int batchSize)
+
+        public async Task GetDataFromTableAsync(Table table, int offset, int batchSize)
         {
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
+            await using var myConnection = new NpgsqlConnection(ConnectionString);
+            string orderBy = table.Columns.FirstOrDefault(x => x.IsPrimaryKey)?.Name ?? table.Columns.First().Name;
+            string oString = $"SELECT * FROM \"{table.Name}\" ORDER BY \"{orderBy}\" LIMIT {batchSize} OFFSET {offset}";
+
+            await myConnection.OpenAsync();
+            await using var oCmd = new NpgsqlCommand(oString, myConnection);
+            await using var oReader = await oCmd.ExecuteReaderAsync();
+
+            while (await oReader.ReadAsync())
             {
-                string oString = $"SELECT * FROM \"{table.Name}\" ORDER BY \"{table.Columns.FirstOrDefault(x => x.IsPrimaryKey)?.Name ?? table.Columns.First().Name}\" LIMIT {batchSize} OFFSET {offset}";
-
-                NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                myConnection.Open();
-                using (NpgsqlDataReader oReader = oCmd.ExecuteReader())
+                Row row = new Row();
+                foreach (var item in table.Columns)
                 {
-                    while (oReader.Read())
+                    var fieldvalue = oReader[item.Name];
+                    row.Cells.Add(new Cell
                     {
-                        Row row = new Row();
-
-                        foreach (var item in table.Columns)
-                        {
-                            var fieldvalue = oReader[item.Name];
-
-                            Cell value = new Cell()
-                            {
-                                ColumnName = item.Name,
-                                ValueString = fieldvalue?.ToString(), // null ellenőrzés
-                            };
-                            row.Cells.Add(value);
-                        }
-                        table.Rows.Add(row);
-                    }
+                        ColumnName = item.Name,
+                        ValueString = fieldvalue?.ToString()
+                    });
                 }
+                table.Rows.Add(row);
             }
         }
 
-        public void GetDataFromTable(Table table)
+
+        public async Task GetDataFromTableAsync(Table table)
         {
-            List<DataObject> list = new List<DataObject>();
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
+            await using var myConnection = new NpgsqlConnection(ConnectionString);
+            string orderBy = table.Columns.FirstOrDefault(x => x.IsPrimaryKey)?.Name ?? table.Columns.First().Name;
+            string oString = $"SELECT * FROM \"{table.Name}\"";
+
+            await myConnection.OpenAsync();
+            await using var oCmd = new NpgsqlCommand(oString, myConnection);
+            await using var oReader = await oCmd.ExecuteReaderAsync();
+
+            while (await oReader.ReadAsync())
             {
-                string oString = "SELECT * FROM \"" + table.Name + "\"";
-
-                NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                myConnection.Open();
-                using (NpgsqlDataReader oReader = oCmd.ExecuteReader())
+                Row row = new Row();
+                foreach (var item in table.Columns)
                 {
-                    while (oReader.Read())
+                    var fieldvalue = oReader[item.Name];
+                    row.Cells.Add(new Cell
                     {
-                        Row row = new Row();
-                        int idx = 0;
-                        foreach (var item in table.Columns)
-                        {
-                            var fieldvalue = oReader[item.Name];
-
-                            Cell value = new Cell()
-                            {
-                                ColumnName = item.Name,
-                                ValueString = fieldvalue.ToString(),
-                            };
-                            row.Cells.Add(value);
-
-                            idx++;
-                        }
-                        table.Rows.Add(row);
-                    }
-
-                    myConnection.Close();
+                        ColumnName = item.Name,
+                        ValueString = fieldvalue?.ToString()
+                    });
                 }
+                table.Rows.Add(row);
             }
         }
 
-        public bool InsertValue(Table table, Row row)
+        public async Task<bool> InsertValueAsync(Table table, Row row)
         {
             Dictionary<string, string> fieldvalues = new Dictionary<string, string>();
             foreach (var item in table.Columns)
@@ -337,14 +295,14 @@ namespace MigrateApi.Connectors
                 string oString = "INSERT INTO \"" + table.Name + "\" (" + string.Join(",", fieldvalues.Keys) + ") VALUES (" + string.Join(",", fieldvalues.Values) + ")";
                 NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
                 myConnection.Open();
-                oCmd.ExecuteNonQuery();
+                await oCmd.ExecuteNonQueryAsync();
                 myConnection.Close();
             }
             return true;
 
         }
 
-        public List<TableRelations> GetRelations()
+        public async Task<List<TableRelations>> GetRelationsAsync()
         {
             List<TableRelations> databaseTableRelations = new List<TableRelations>();
             using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
@@ -364,7 +322,7 @@ WHERE constraint_type = 'FOREIGN KEY'
 ";
                 NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
                 myConnection.Open();
-                using (NpgsqlDataReader oReader = oCmd.ExecuteReader())
+                using (NpgsqlDataReader oReader = await oCmd.ExecuteReaderAsync())
                 {
                     while (oReader.Read())
                     {
@@ -384,34 +342,47 @@ WHERE constraint_type = 'FOREIGN KEY'
             return databaseTableRelations;
         }
 
-        public bool CreateRealtion(TableRelations relation)
+        public async Task<bool> CreateRealtionAsync(TableRelations relation)
         {
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
+            try
             {
-                string oString = "ALTER TABLE \"" + relation.ChildTableName + "\" ADD CONSTRAINT FK_" + relation.FKName.Replace("~", "") + " FOREIGN KEY (\"" + relation.ChildColName + "\") REFERENCES \"" + relation.ParentTableName + "\" (\"" + relation.ParentColName + "\")";
-                NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
-                myConnection.Open();
-                oCmd.ExecuteNonQuery();
-                myConnection.Close();
-            }
-
-            return true;
-        }
-
-        public bool DropTable(string tablename)
-        {
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
-            {
-                string oString = "DROP TABLE IF EXISTS \"" + tablename + "\" CASCADE";
-                using (NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection))
+                using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
                 {
+                    string oString = "ALTER TABLE \"" + relation.ChildTableName + "\" ADD CONSTRAINT FK_" + relation.FKName.Replace("~", "") + " FOREIGN KEY (\"" + relation.ChildColName + "\") REFERENCES \"" + relation.ParentTableName + "\" (\"" + relation.ParentColName + "\")";
+                    NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection);
                     myConnection.Open();
-                    oCmd.ExecuteNonQuery();
+                    await oCmd.ExecuteNonQueryAsync();
+                    myConnection.Close();
                 }
+
+                return true;
             }
-            return true;
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
+        public async Task<bool> DropTableAsync(string tablename)
+        {
+            try
+            {
+                using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
+                {
+                    string oString = "DROP TABLE IF EXISTS \"" + tablename + "\" CASCADE";
+                    using (NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection))
+                    {
+                        myConnection.Open();
+                        await oCmd.ExecuteNonQueryAsync();
+                    }
+                }
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
 
         private string GetValueString(Column field,Row row)
         {
@@ -481,43 +452,50 @@ WHERE constraint_type = 'FOREIGN KEY'
             }
         }
 
-        public bool InsertValues(Table table, List<Row> rows)
+        public async Task<bool> InsertValuesAsync(Table table, List<Row> rows)
         {
-            if (rows == null || rows.Count == 0)
+            try
+            {
+                if (rows == null || rows.Count == 0)
+                    return false;
+
+                List<string> columns = table.Columns.Select(c => "\"" + c.Name + "\"").ToList();
+
+                List<string> valuesList = new List<string>();
+                foreach (var row in rows)
+                {
+                    List<string> fieldValues = new List<string>();
+                    foreach (var column in table.Columns)
+                    {
+                        var valueString = GetValueString(column, row);
+                        if (valueString != "'NULL'")
+                        {
+                            fieldValues.Add(valueString);
+                        }
+                        else
+                        {
+                            fieldValues.Add("NULL");
+                        }
+                    }
+                    valuesList.Add("(" + string.Join(",", fieldValues) + ")");
+                }
+
+                using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
+                {
+                    string oString = "INSERT INTO \"" + table.Name + "\" (" + string.Join(",", columns) + ") VALUES " + string.Join(",", valuesList);
+                    using (NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection))
+                    {
+                        myConnection.Open();
+                        await oCmd.ExecuteNonQueryAsync();
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
                 return false;
-
-            List<string> columns = table.Columns.Select(c => "\"" + c.Name + "\"").ToList();
-
-            List<string> valuesList = new List<string>();
-            foreach (var row in rows)
-            {
-                List<string> fieldValues = new List<string>();
-                foreach (var column in table.Columns)
-                {
-                    var valueString = GetValueString(column, row);
-                    if (valueString != "'NULL'")
-                    {
-                        fieldValues.Add(valueString);
-                    }
-                    else
-                    {
-                        fieldValues.Add("NULL"); // Biztos ami biztos, INSERT-ben a NULL jó így
-                    }
-                }
-                valuesList.Add("(" + string.Join(",", fieldValues) + ")");
             }
-
-            using (NpgsqlConnection myConnection = new NpgsqlConnection(ConnectionString))
-            {
-                string oString = "INSERT INTO \"" + table.Name + "\" (" + string.Join(",", columns) + ") VALUES " + string.Join(",", valuesList);
-                using (NpgsqlCommand oCmd = new NpgsqlCommand(oString, myConnection))
-                {
-                    myConnection.Open();
-                    oCmd.ExecuteNonQuery();
-                }
-            }
-
-            return true;
         }
     }
 }

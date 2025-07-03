@@ -1,3 +1,6 @@
+using MongoDB.Bson.Serialization.Attributes;
+using MongoDB.Bson;
+
 namespace MigrateApi.Models
 {
     public class TableRelations

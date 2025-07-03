@@ -20,6 +20,8 @@ namespace MigrateApi.Request
         public bool NoRelations { get; set; }
         public bool SaveRelations { get; set; }
         public bool DeletFromDb { get; set; }
+        public int MaxRowCountPerTable { get; set; }
+        public int BatchSize { get; set; } = 1000;
 
     }
 }

@@ -1,0 +1,22 @@
+cards:
+give you specials
+give you environment changes
+can change eating
+change animal stats
+give resources
+mutate
+new animal/plant/bug
+
+new animal card:
+base stat,
+base eat type,
+specials,
+other action,
+
+new plant card:
+block count:
+food: how many food it gives to blocks
+specials: gives an animal specials
+environment changes: 
+other action,
+

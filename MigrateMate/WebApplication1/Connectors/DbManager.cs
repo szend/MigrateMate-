@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using MigrateApi.Models;
 using MigrateApi.Request;
 
@@ -10,6 +11,7 @@ namespace MigrateApi.Connectors
         SqlServer,
         Oracle,
         MongoDB,
+        JsonApi
     }
 
     public class DbManager
@@ -30,71 +32,80 @@ namespace MigrateApi.Connectors
             return dbType switch
             {
                 DbType.PostgreSQL => new PostgreConnector(connectionString),
-                //DbType.MySQL => new MySqlConnector(connectionString),
+                DbType.MySQL => new MySqlConnector(connectionString),
                 //DbType.SqlServer => new SqlServerConnector(connectionString),
                 //DbType.Oracle => new OracleConnector(connectionString),
                 DbType.MongoDB => new MongoConnector(connectionString),
+                DbType.JsonApi => new JsonApiConnector(connectionString),
                 _ => throw new NotSupportedException($"Database type {dbType} is not supported.")
             };
         }
 
-        public void MigrateData()
+        public async Task MigrateData()
         {
-            var fromTableNames = _from.GetAllTableName();
-            var fromTables = _from.GetAllTable(fromTableNames);
+            var fromTableNames = await _from.GetAllTableNameAsync();
+            var fromTables = await _from.GetAllTableAsync(fromTableNames);
 
+            var tasklist = new List<Task>();
             foreach (var table in fromTables)
             {
-                _to.CreateTable(table);
-
-                InsertValues(table);
+                var task = Task.Run(async () =>
+                {
+                    await _to.CreateTableAsync(table);
+                    await InsertValues(table);
+                });
+                tasklist.Add(task);
             }
+            await Task.WhenAll(tasklist);
 
             if (!_config.NoRelations)
             {
-                CreateRelations();
+                await CreateRelations();
             }
 
             if (_config.SaveRelations)
             {
-                SaveRelations();
+                await SaveRelations();
             }
 
             if (_config.DeletFromDb)
             { 
                 foreach (var table in fromTables)
                 {
-                    _from.DropTable(table.Name);
+                    await _from.DropTableAsync(table.Name);
                 }
             }  
         }
 
-        private void InsertValues(Table table)
+        private async Task InsertValues(Table table)
         {
-            var count = _from.GetCount(table);
-            int batchSize = 1000;
-
-            if (count > batchSize)
+            var count = await _from.GetCountAsync(table);
+            if(count > _config.MaxRowCountPerTable && _config.MaxRowCountPerTable > 0)
             {
-                int totalBatches = (int)Math.Ceiling((double)count / batchSize);
+                count = _config.MaxRowCountPerTable;
+            }
+
+            if (count > _config.BatchSize)
+            {
+                int totalBatches = (int)Math.Ceiling((double)count / _config.BatchSize);
                 for (int i = 0; i < totalBatches; i++)
                 {
                     table.Rows.Clear();
-                    _from.GetDataFromTable(table, i * batchSize, batchSize);
-                    _to.InsertValues(table, table.Rows);
+                    await _from.GetDataFromTableAsync(table, i * _config.BatchSize, _config.BatchSize);
+                    await _to.InsertValuesAsync(table, table.Rows);
                 }
             }
             else
             {
                 table.Rows.Clear();
-                _from.GetDataFromTable(table);
-                _to.InsertValues(table, table.Rows.ToList());
+                await _from.GetDataFromTableAsync(table);
+                await _to.InsertValuesAsync(table, table.Rows.ToList());
             }
         }
 
-        private void CreateRelations()
+        private async Task CreateRelations()
         {
-            var relations = _from.GetRelations();
+            var relations = await _from.GetRelationsAsync();
 
             var possibleNN = relations
                 .GroupBy(r => r.ChildTableName)
@@ -111,7 +122,7 @@ namespace MigrateApi.Connectors
             {
                 if (!possibleNN.Any(x => x.Table == relation.ChildTableName))
                 {
-                    _to.CreateRealtion(relation);
+                    await _to.CreateRealtionAsync(relation);
                 }
             }
 
@@ -120,14 +131,17 @@ namespace MigrateApi.Connectors
                 var nnRelations = relations.Where(r => r.ChildTableName == nn.Table).ToList();
                 foreach (var rel in nnRelations)
                 {
-                    _to.CreateRealtion(rel);
+                     await _to.CreateRealtionAsync(rel);
                 }
             }
         }
 
-        private void SaveRelations()
+        private async Task SaveRelations()
         {
-            Table relationTable = new Table();
+            Table relationTable = new Table()
+            {
+                Name = "InternalTableRelations",
+            };
 
             Column fkName = new Column()
             {
@@ -149,7 +163,7 @@ namespace MigrateApi.Connectors
                 Type = ColumnType.String,
                 Nullabel = false,
             };
-            relationTable.Columns.Add(fkName);
+            relationTable.Columns.Add(parentTableName);
 
             Column parentColName = new Column()
             {
@@ -160,7 +174,7 @@ namespace MigrateApi.Connectors
                 Type = ColumnType.String,
                 Nullabel = false,
             };
-            relationTable.Columns.Add(fkName);
+            relationTable.Columns.Add(parentColName);
 
             Column childTableName = new Column()
             {
@@ -171,7 +185,7 @@ namespace MigrateApi.Connectors
                 Type = ColumnType.String,
                 Nullabel = false,
             };
-            relationTable.Columns.Add(fkName);
+            relationTable.Columns.Add(childTableName);
 
             Column childColName = new Column()
             {
@@ -182,11 +196,11 @@ namespace MigrateApi.Connectors
                 Type = ColumnType.String,
                 Nullabel = false,
             };
-            relationTable.Columns.Add(fkName);
+            relationTable.Columns.Add(childColName);
 
-            _to.CreateTable(relationTable);
+            await _to.CreateTableAsync(relationTable);
 
-            var relations = _from.GetRelations();
+            var relations = await _from.GetRelationsAsync();
             foreach (var relation in relations)
             {
                 Row row = new Row();
@@ -229,7 +243,7 @@ namespace MigrateApi.Connectors
                 relationTable.Rows.Add(row);
             }
 
-            _to.InsertValues(relationTable, relationTable.Rows);
+            await _to.InsertValuesAsync(relationTable, relationTable.Rows);
 
         }
     }

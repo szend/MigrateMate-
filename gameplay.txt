@@ -1,0 +1,44 @@
+gameplay:
+
+actions:
+move: a unit of animal in the board
+draw: draw a card, at the end of your turn you can have 2*animal/bug/plant type you have
+change stat: +- 1water=1food=1temperature must have +1 and -1 
+use card:
+special actions from cards
+
+
+
+one round: 2 action for every player until everyone pass, if no more action then new round
+
+end of the round: 
+if an animal has reproduce bigger and lives in a correct temperature then 1, you can place 1-5 marker with same type next to or into the field it is from.
+
+check living requirements: (temps, food, water), if not correct then the living die, remove the marker 
+	food: plant eater first, then eating flesh, you can choose what animal you want to eat but you can not choose to not eat if you can, check the hunting criteria (size, hide, other), hunter do not eat other hunter, if the eating is combination you must choose one in every turn and act like normal
+
+get as many biovalue as many sum of size you have 
+and as many plant bio value as many sum of plant bio value you have for each block
+
+
+drop as many card as needed to fit your hand limit 2*living type
+
+
+note:
+if a plant die, there will bed no food for plant eater, the hunters cant hunt, a whole microsystem can die or decrease
+if your hunter is too good, can eat all of your plant eater but good tactic to send a hunter to the opponent fields
+
+new round
+
+every four round, there is a random global change
+
+end of the game:
+points:
+from number of animal*size
+number of plant*block
+from card
+special quest (dominancy, diversity, appear everywhere, have more plant/animal, create special animal/plant, other..)
+
+end criterias
+todo base after 12 round or can make the map smaller to decrease the time or set the round to any
+

@@ -14,7 +14,8 @@ namespace MigrateApi.Models
         Guid,
         Json,
         Jsonb,
-        Array
+        Array,
+        Decimal
     }
 
     public class Column   

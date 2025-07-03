@@ -1,0 +1,40 @@
+animal board:
+one big board for the 6 animal you can have, each board has a color with a same colored markers for animals, each animal has a different shape
+marker place: choose a correct marker and place here
+reproduce: 1-6 how many animal  you can place in the board (big dice with numbers)
+-water: 1-6 how many water it needs (what type of field it can live) (big dice with numbers)
+-food+size: 1-6  how many food it needs (if flesh how many animal are near and eatable) (big dice with numbers)
+-temperature: resistance -10->+40 +10each where can it live depend on the temperature of the field, two marker- between-survive and reproduce, bordervalues-survive, out- die (slider with two marker)
+and contains a place for the eating type (slider, other try state one/more marker)
+
+animals: small colored dice with number
+
+eating:
+flesh: animal in the same/neighbor field what have equal or smaller size than this, can eat more animal but must equal the food requirement it has (round up) it can be your or other users animals
+plant: if there is available food capacity in the field, or eatable plant
+combination of 2: you can chosse in each round
+
+specials:
+swim: can move water
+fly/climb: can move hill
+fast: +1 field when move
+poison: if eaten, kill the hunter
+hide: only can be eaten if in the same field, or hunter with +1 hunt ability
+hunt: +1 hunt
+immune to... disaster like bacterial, or poison
+csorda: can move the whole group from the same field together with one action and action price
+falka: chain hunting, if other animal in the same type in the adjacent field, can bring food to each other
+symbiosis: can be merged into an other animal, delete this animal and change stats for the other
+mutate: create other spices, same base stat but maybe some changes, now you can control +1 type of animal or plant.
+dominant: ...
+
+animal card:
+base stat,
+base eat type,
+specials,
+other action,
+
+plant card:
++food: how many food it gives to the block when conquer
+specials,
+other action,
